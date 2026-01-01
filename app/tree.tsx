@@ -5,9 +5,13 @@ import { useThemeColor } from '@/hooks/use-theme-color';
 import { FamilyService } from '@/services/family-service';
 import { Member } from '@/types/family';
 import { calculateTreeLayout } from '@/utils/tree-layout';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Stack, useRouter } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Dimensions, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Svg, { Line, Marker, Path } from 'react-native-svg';
@@ -33,6 +37,11 @@ export default function TreeScreen() {
   const [useNewTarget, setUseNewTarget] = useState(true);
   const [newTargetName, setNewTargetName] = useState('');
   const [targetId, setTargetId] = useState<string | null>(null);
+
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportText, setExportText] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
 
   const ensureDefaultMember = useCallback(async (userKey: string, list: Member[]) => {
     if (list.length > 0) return list;
@@ -70,12 +79,200 @@ export default function TreeScreen() {
   const loadMembers = useCallback(async () => {
     const userKey = await AsyncStorage.getItem('currentUser');
     if (!userKey) return router.replace('/login');
+
     const list = await FamilyService.getFamily(userKey);
     const ensured = await ensureDefaultMember(userKey, list);
     setMembers(ensured);
     setActiveMemberId(null);
     if (ensured.length <= 1) setIsEditing(false);
   }, [ensureDefaultMember, router]);
+
+  const normalizeImportedFamily = useCallback((data: unknown): Member[] | null => {
+    const rawList: any[] = Array.isArray(data)
+      ? data
+      : (data && typeof data === 'object' && Array.isArray((data as any).members))
+        ? (data as any).members
+        : [];
+
+    if (!Array.isArray(rawList)) return null;
+
+    const seen = new Set<string>();
+    const sanitized: Member[] = [];
+
+    for (const item of rawList) {
+      if (!item || typeof item !== 'object') continue;
+      const id = (item as any).id;
+      const name = (item as any).name;
+      if (typeof id !== 'string' || !id.trim()) continue;
+      if (typeof name !== 'string' || !name.trim()) continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+
+      const dob = typeof (item as any).dob === 'string' ? (item as any).dob : undefined;
+      const email = typeof (item as any).email === 'string' ? (item as any).email : undefined;
+      const photo = typeof (item as any).photo === 'string' ? (item as any).photo : undefined;
+
+      const relationsRaw = (item as any).relations;
+      const relations = Array.isArray(relationsRaw)
+        ? relationsRaw
+            .filter((r: any) => r && typeof r === 'object')
+            .map((r: any) => ({
+              type: typeof r.type === 'string' ? r.type : 'other',
+              targetId: typeof r.targetId === 'string' ? r.targetId : '',
+            }))
+            .filter((r: any) => r.targetId && r.targetId !== id)
+        : [];
+
+      sanitized.push({ id, name: name.trim(), dob, email, photo, relations });
+    }
+
+    if (sanitized.length === 0) return [];
+
+    // Drop relations that reference missing members.
+    const idSet = new Set(sanitized.map((m) => m.id));
+    return sanitized.map((m) => ({
+      ...m,
+      relations: (m.relations || []).filter((r) => idSet.has(r.targetId)),
+    }));
+  }, []);
+
+  const openExportModal = useCallback(() => {
+    setExportText(JSON.stringify(members, null, 2));
+    setExportOpen(true);
+  }, [members]);
+
+  const exportToFile = useCallback(async () => {
+    const json = JSON.stringify(members, null, 2);
+
+    try {
+      const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      if (!baseDir) {
+        openExportModal();
+        return;
+      }
+
+      const safeStamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileUri = `${baseDir}family-tree-${safeStamp}.json`;
+      await FileSystem.writeAsStringAsync(fileUri, json, { encoding: FileSystem.EncodingType.UTF8 });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Export Family Tree',
+        });
+      } else {
+        openExportModal();
+        Alert.alert('Sharing not available', 'Sharing is not available on this device. Copy the JSON from the export modal instead.');
+      }
+    } catch {
+      openExportModal();
+      Alert.alert('Export failed', 'Could not export the JSON file. Copy the JSON from the export modal instead.');
+    }
+  }, [members, openExportModal]);
+
+  const handleExportPress = useCallback(() => {
+    if (Platform.OS === 'web') {
+      openExportModal();
+      return;
+    }
+
+    Alert.alert('Export', 'Choose export method', [
+      { text: 'File', onPress: () => void exportToFile() },
+      { text: 'Copy/Paste', onPress: openExportModal },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [exportToFile, openExportModal]);
+
+  const closeExport = useCallback(() => {
+    setExportOpen(false);
+  }, []);
+
+  const importFromJsonText = useCallback(
+    async (text: string) => {
+      const userKey = await AsyncStorage.getItem('currentUser');
+      if (!userKey) return router.replace('/login');
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        Alert.alert('Invalid JSON', 'Please provide a valid JSON export.');
+        return;
+      }
+
+      const next = normalizeImportedFamily(parsed);
+      if (next === null) {
+        Alert.alert('Invalid format', 'Expected a JSON array of members (or an object with a "members" array).');
+        return;
+      }
+
+      const ensured = await ensureDefaultMember(userKey, next);
+      await FamilyService.saveFamily(userKey, ensured);
+      setMembers(ensured);
+      setIsEditing(false);
+      setActiveMemberId(null);
+      Alert.alert('Imported', 'Family tree imported successfully.');
+    },
+    [ensureDefaultMember, normalizeImportedFamily, router]
+  );
+
+  const openImportModal = useCallback(() => {
+    setImportText('');
+    setImportOpen(true);
+  }, []);
+
+  const importFromFile = useCallback(async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/json', 'text/json', 'text/plain'],
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+
+    if (result.canceled) return;
+    const uri = result.assets?.[0]?.uri;
+    if (!uri) {
+      Alert.alert('Import failed', 'No file was selected.');
+      return;
+    }
+
+    const text = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+    await importFromJsonText(text);
+  }, [importFromJsonText]);
+
+  const handleImportPress = useCallback(() => {
+    if (Platform.OS === 'web') {
+      openImportModal();
+      return;
+    }
+
+    Alert.alert('Import', 'Choose import method', [
+      {
+        text: 'File',
+        onPress: () => {
+          void (async () => {
+            try {
+              await importFromFile();
+            } catch {
+              openImportModal();
+              Alert.alert('Import failed', 'Could not read the selected file. You can paste JSON in the import modal instead.');
+            }
+          })();
+        },
+      },
+      { text: 'Copy/Paste', onPress: openImportModal },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [importFromFile, openImportModal]);
+
+  const closeImport = useCallback(() => {
+    setImportOpen(false);
+  }, []);
+
+  const handleImport = useCallback(async () => {
+    await importFromJsonText(importText);
+    closeImport();
+  }, [closeImport, importFromJsonText, importText]);
 
   useEffect(() => {
     loadMembers();
@@ -121,8 +318,25 @@ export default function TreeScreen() {
     return calculateTreeLayout(members, SCREEN_W);
   }, [members]);
 
-  const contentWidth = Math.max(SCREEN_W, (Object.keys(positions).length ? Object.keys(positions).length * 100 : SCREEN_W) + 200);
-  const contentHeight = Math.max(800, layers.length * 160 + 200);
+  const contentSize = useMemo(() => {
+    const nodeW = 140;
+    const nodeH = 100;
+    const pad = 260;
+    const pts = Object.values(positions);
+    if (!pts.length) {
+      return { width: SCREEN_W, height: 800 };
+    }
+    const minX = Math.min(...pts.map((p) => p.x));
+    const maxX = Math.max(...pts.map((p) => p.x));
+    const minY = Math.min(...pts.map((p) => p.y));
+    const maxY = Math.max(...pts.map((p) => p.y));
+    const width = Math.max(SCREEN_W, maxX - minX + nodeW + pad);
+    const height = Math.max(800, maxY - minY + nodeH + pad);
+    return { width, height };
+  }, [positions]);
+
+  const contentWidth = contentSize.width;
+  const contentHeight = contentSize.height;
 
   const openRelationModal = useCallback((sourceId: string, type: 'child' | 'spouse' | 'sibling') => {
     setRelationModal({ open: true, sourceId, type });
@@ -227,16 +441,19 @@ export default function TreeScreen() {
           title: 'Family Tree',
           headerLeft: () => null,
           headerRight: () => (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginRight: 15 }}>
-              {members.length > 1 ? (
-                <Pressable onPress={() => setIsEditing(!isEditing)}>
-                  <ThemedText style={{ color: isEditing ? tint : textColor, fontWeight: '700' }}>
-                    {isEditing ? 'Done' : 'Edit'}
-                  </ThemedText>
-                </Pressable>
-              ) : null}
-              <Pressable onPress={handleReset}>
-                <ThemedText style={{ color: '#FF3B30', fontWeight: '700' }}>Reset</ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginRight: 12 }}>
+              <Pressable onPress={handleExportPress} style={[styles.headerPill, { backgroundColor: tint, borderColor: tint }]}>
+                <ThemedText style={styles.headerPillText}>Export</ThemedText>
+              </Pressable>
+              <Pressable onPress={handleImportPress} style={[styles.headerPill, { backgroundColor: tint, borderColor: tint }]}>
+                <ThemedText style={styles.headerPillText}>Import</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push('/profile')}
+                style={[styles.iconBtn, { backgroundColor: tint, borderColor: tint }]}
+                accessibilityLabel="Profile"
+              >
+                <Ionicons name="person-circle-outline" size={22} color="#fff" />
               </Pressable>
             </View>
           ),
@@ -244,7 +461,7 @@ export default function TreeScreen() {
       />
 
       <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={{ width: contentWidth }}>
-        <ScrollView contentContainerStyle={{ height: contentHeight }}>
+        <ScrollView contentContainerStyle={{ height: contentHeight, paddingBottom: 96 }}>
           <View style={{ flex: 1 }}>
             {layers.map((_, i) => (
               <ThemedText 
@@ -254,7 +471,7 @@ export default function TreeScreen() {
                   left: 10, 
                   top: i * 180 + 100 + 40, 
                   fontWeight: 'bold', 
-                  color: '#94a3b8',
+                  color: tint,
                   opacity: 0.5,
                   zIndex: 0
                 }}
@@ -265,7 +482,7 @@ export default function TreeScreen() {
             <Svg style={StyleSheet.absoluteFill} width={contentWidth} height={contentHeight}>
               {/* Define arrow marker */}
               <Marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
-                <Path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                <Path d="M 0 0 L 10 5 L 0 10 z" fill={tint} />
               </Marker>
 
               {/* Spouse Edges */}
@@ -278,7 +495,7 @@ export default function TreeScreen() {
                     key={`spouse-${i}`}
                     x1={a.x + 70} y1={a.y + 40}
                     x2={b.x + 70} y2={b.y + 40}
-                    stroke="#f43f5e"
+                    stroke="#FF2D55"
                     strokeWidth={2}
                     strokeDasharray="5, 5"
                   />
@@ -309,7 +526,8 @@ export default function TreeScreen() {
                   <Path
                     key={`edge-${i}`}
                     d={`M ${startX} ${startY} C ${startX} ${midY} ${endX} ${midY} ${endX} ${endY}`}
-                    stroke="#94a3b8"
+                    stroke={tint}
+                    strokeOpacity={0.35}
                     strokeWidth={2}
                     fill="none"
                   />
@@ -321,7 +539,7 @@ export default function TreeScreen() {
               const m = members.find((mm) => mm.id === id);
               if (!m) return null;
               
-              const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD', '#D4A5A5', '#9B59B6', '#3498DB'];
+              const colors = ['#FF2D55', '#FF9500', '#FFCC00', '#34C759', '#5AC8FA', '#0A84FF', '#5856D6', '#AF52DE'];
               const hash = id.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
               const color = colors[hash % colors.length];
               
@@ -341,6 +559,26 @@ export default function TreeScreen() {
           </View>
         </ScrollView>
       </ScrollView>
+
+      <View style={[styles.bottomBar, { backgroundColor: cardColor, borderTopColor: borderColor }]}>
+        <Pressable
+          disabled={members.length <= 1}
+          onPress={() => setIsEditing((v) => !v)}
+          style={[
+            styles.bottomBtn,
+            { backgroundColor: tint, borderColor: tint, opacity: members.length <= 1 ? 0.4 : 1 },
+          ]}
+        >
+          <ThemedText style={styles.bottomBtnText}>{isEditing ? 'Done' : 'Edit'}</ThemedText>
+        </Pressable>
+
+        <Pressable
+          onPress={handleReset}
+          style={[styles.bottomBtn, { backgroundColor: '#FF3B30', borderColor: '#FF3B30' }]}
+        >
+          <ThemedText style={styles.bottomBtnText}>Restart</ThemedText>
+        </Pressable>
+      </View>
 
       {relationModal.open && (
         <View style={styles.overlay}>
@@ -412,11 +650,114 @@ export default function TreeScreen() {
           </View>
         </View>
       )}
+
+      {exportOpen && (
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeExport} />
+          <View style={[styles.modalCard, { backgroundColor: cardColor, borderColor: borderColor }]}>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Export JSON</ThemedText>
+            <ThemedText style={{ color: textColor, opacity: 0.8, marginBottom: 10 }}>
+              Copy this JSON and keep it safe.
+            </ThemedText>
+            <ScrollView style={{ maxHeight: 280, marginBottom: 12 }}>
+              <TextInput
+                value={exportText}
+                editable={false}
+                multiline
+                style={[styles.jsonBox, { backgroundColor: bgColor, borderColor: borderColor, color: textColor }]}
+              />
+            </ScrollView>
+            <View style={styles.modalButtons}>
+              <Pressable onPress={closeExport} style={[styles.modalBtn, { borderColor: borderColor }]}>
+                <ThemedText style={{ color: textColor, fontWeight: '700' }}>Close</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {importOpen && (
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeImport} />
+          <View style={[styles.modalCard, { backgroundColor: cardColor, borderColor: borderColor }]}>
+            <ThemedText style={[styles.modalTitle, { color: textColor }]}>Import JSON</ThemedText>
+            <ThemedText style={{ color: textColor, opacity: 0.8, marginBottom: 10 }}>
+              Paste a previously exported JSON here.
+            </ThemedText>
+            <ScrollView style={{ maxHeight: 280, marginBottom: 12 }}>
+              <TextInput
+                value={importText}
+                onChangeText={setImportText}
+                multiline
+                placeholder="Paste JSON..."
+                placeholderTextColor="#94a3b8"
+                style={[styles.jsonBox, { backgroundColor: bgColor, borderColor: borderColor, color: textColor }]}
+              />
+            </ScrollView>
+            <View style={styles.modalButtons}>
+              <Pressable onPress={closeImport} style={[styles.modalBtn, { borderColor: borderColor }]}>
+                <ThemedText style={{ color: textColor, fontWeight: '700' }}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={handleImport}
+                style={[styles.modalBtn, { backgroundColor: tint, borderColor: tint }]}
+              >
+                <ThemedText style={{ color: '#fff', fontWeight: '700' }}>Import</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
+  headerPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  headerPillText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  bottomBtn: {
+    minWidth: 140,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  bottomBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
@@ -487,5 +828,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  jsonBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    minHeight: 200,
+    textAlignVertical: 'top',
   },
 });

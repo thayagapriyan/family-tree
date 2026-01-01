@@ -5,8 +5,8 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#6366f1'; // Indigo
-const tintColorDark = '#818cf8';
+const tintColorLight = '#7c3aed'; // Vibrant violet
+const tintColorDark = '#a78bfa';
 
 export const Colors = {
   light: {

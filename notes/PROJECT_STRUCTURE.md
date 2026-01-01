@@ -62,6 +62,10 @@ This project is an **Expo Router + React Native + TypeScript** app for managing 
   - Renders nodes using `components/tree/tree-node.tsx`.
   - Renders relationship edges using `react-native-svg`.
   - Contains the “quick add relationship” overlay modal.
+  - Contains **Export/Import** features:
+    - Export to a `.json` file (share/save)
+    - Import from a `.json` file (document picker)
+    - Web fallback: copy/paste JSON modal
 
 - `app/member.tsx`
   - Member profile/details screen.
@@ -204,6 +208,31 @@ This project is an **Expo Router + React Native + TypeScript** app for managing 
   - Second tap: opens the member profile
 - Picking a profile photo:
   - Stored as `member.photo` and saved via `FamilyService.saveFamily`.
+
+- Export family tree:
+  - Creates a JSON export of the current `Member[]`.
+  - On mobile: writes a `.json` file and opens the native share sheet.
+  - On web: shows the JSON in a modal for copy/paste.
+
+- Import family tree:
+  - On mobile: user picks a `.json` file; app validates + saves it.
+  - On web: user pastes JSON; app validates + saves it.
+
+---
+
+## Expo modules used (feature dependencies)
+
+- `expo-image-picker`
+  - Lets the user choose a profile picture.
+
+- `expo-file-system` (used via `expo-file-system/legacy` in code)
+  - Writes/reads the exported `.json` file.
+
+- `expo-sharing`
+  - Opens the native share sheet for the exported `.json` file.
+
+- `expo-document-picker`
+  - Lets the user pick a `.json` file to import.
 
 ---
 
