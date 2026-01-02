@@ -3,10 +3,12 @@ import { ThemedView } from '@/components/ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import { FamilyService } from '@/services/familyService';
 import { Member } from '@/types/Family';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 const RELATION_TYPES = [
   'parent',
@@ -38,12 +40,17 @@ export default function AddRelationScreen() {
   const [customLabel, setCustomLabel] = useState('');
   const [useNewTarget, setUseNewTarget] = useState(false);
   const [newTargetName, setNewTargetName] = useState('');
+  const [newTargetDob, setNewTargetDob] = useState('');
   const [targetId, setTargetId] = useState<string | null>(null);
+  
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [tempDate, setTempDate] = useState(new Date());
 
   const inputBg = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
   const tint = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
+  const cardBg = useThemeColor({}, 'card');
 
   useEffect(() => {
     (async () => {
@@ -83,7 +90,12 @@ export default function AddRelationScreen() {
     if (useNewTarget) {
       if (!newTargetName.trim()) return Alert.alert('Name required');
       finalTargetId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-      list.push({ id: finalTargetId, name: newTargetName.trim(), relations: [] });
+      list.push({ 
+        id: finalTargetId, 
+        name: newTargetName.trim(), 
+        dob: newTargetDob || undefined,
+        relations: [] 
+      });
     }
 
     if (!finalTargetId) return Alert.alert('Select target member');
@@ -92,7 +104,7 @@ export default function AddRelationScreen() {
     // Add primary relation
     addRelationPair(sourceId, finalTargetId, type);
 
-    // Joint parenting logic: if adding a child to a parent who has a spouse, link child to both
+    // Joint parenting logic
     if (type === 'child') {
       const sourceMember = list.find(m => m.id === sourceId);
       const spouseRel = sourceMember?.relations?.find((r) => r.type === 'spouse' || r.type === 'partner');
@@ -106,7 +118,6 @@ export default function AddRelationScreen() {
         addRelationPair(sourceId, spouseRel.targetId, 'parent');
       }
     } else if (type === 'spouse' || type === 'partner') {
-      // If adding a spouse, link existing children of the source to the new spouse
       const sourceMember = list.find(m => m.id === sourceId);
       const childrenRels = sourceMember?.relations?.filter((r) => r.type === 'child') || [];
       childrenRels.forEach((c) => {
@@ -117,6 +128,22 @@ export default function AddRelationScreen() {
     await FamilyService.saveFamily(list);
     setMembers(list);
     router.replace('/tree');
+  };
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+      if (selectedDate) {
+        setNewTargetDob(selectedDate.toISOString().split('T')[0]);
+      }
+    } else {
+      if (selectedDate) setTempDate(selectedDate);
+    }
+  };
+
+  const confirmDate = () => {
+    setNewTargetDob(tempDate.toISOString().split('T')[0]);
+    setShowDatePicker(false);
   };
 
   return (
@@ -178,13 +205,24 @@ export default function AddRelationScreen() {
           </View>
 
           {useNewTarget ? (
-            <TextInput 
-              placeholder="Relative's full name" 
-              placeholderTextColor="#94a3b8" 
-              style={[styles.input, { backgroundColor: inputBg, borderColor: border, color: textColor }]} 
-              value={newTargetName} 
-              onChangeText={setNewTargetName} 
-            />
+            <View style={{ gap: 12 }}>
+              <TextInput 
+                placeholder="Relative's full name" 
+                placeholderTextColor="#94a3b8" 
+                style={[styles.input, { backgroundColor: inputBg, borderColor: border, color: textColor }]} 
+                value={newTargetName} 
+                onChangeText={setNewTargetName} 
+              />
+              <Pressable 
+                style={[styles.input, { backgroundColor: inputBg, borderColor: border, flexDirection: 'row', alignItems: 'center' }]} 
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Ionicons name="calendar-outline" size={20} color={textColor} style={{ marginRight: 10 }} />
+                <ThemedText style={{ color: newTargetDob ? textColor : '#94a3b8' }}>
+                  {newTargetDob || 'Date of Birth (Optional)'}
+                </ThemedText>
+              </Pressable>
+            </View>
           ) : (
             <View style={styles.targetList}>
               {members.filter(m => m.id !== sourceId).map((item) => (
@@ -214,6 +252,41 @@ export default function AddRelationScreen() {
         
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {showDatePicker && Platform.OS === 'ios' && (
+        <Modal transparent animationType="fade" visible={showDatePicker}>
+          <View style={styles.overlay}>
+            <View style={[styles.modalCard, { backgroundColor: cardBg, borderColor: border }]}>
+              <ThemedText style={styles.modalTitle}>Select Date</ThemedText>
+              <DateTimePicker
+                value={tempDate}
+                mode="date"
+                display="spinner"
+                onChange={onDateChange}
+                maximumDate={new Date()}
+              />
+              <View style={styles.modalButtons}>
+                <Pressable onPress={() => setShowDatePicker(false)} style={[styles.modalBtn, { borderColor: border }]}>
+                  <ThemedText style={{ color: textColor }}>Cancel</ThemedText>
+                </Pressable>
+                <Pressable onPress={confirmDate} style={[styles.modalBtn, { backgroundColor: tint, borderColor: tint }]}>
+                  <ThemedText style={{ color: '#fff', fontWeight: '700' }}>Confirm</ThemedText>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {showDatePicker && Platform.OS === 'android' && (
+        <DateTimePicker
+          value={tempDate}
+          mode="date"
+          display="default"
+          onChange={onDateChange}
+          maximumDate={new Date()}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -249,4 +322,9 @@ const styles = StyleSheet.create({
   saveButton: { borderRadius: 16, padding: 18, alignItems: 'center', marginTop: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 5 },
   saveButtonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   cancelButton: { padding: 16, alignItems: 'center', marginTop: 8 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalCard: { width: '85%', borderRadius: 24, padding: 24, borderWidth: 1 },
+  modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 20, textAlign: 'center' },
+  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 20 },
+  modalBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
 });

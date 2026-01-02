@@ -4,12 +4,14 @@ import { useThemeColor } from '@/hooks/useThemeColor';
 import { FamilyService } from '@/services/familyService';
 import { Member } from '@/types/Family';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const RELATION_TYPES = [
   'parent',
@@ -49,14 +51,17 @@ export default function MemberScreen() {
   const [newMemberDob, setNewMemberDob] = useState('');
   const [sexInput, setSexInput] = useState('');
   const [dobInput, setDobInput] = useState('');
+  const [dodInput, setDodInput] = useState('');
   const [showDobPicker, setShowDobPicker] = useState(false);
-  const [pickerSource, setPickerSource] = useState<'profile' | 'adding'>('profile');
+  const [pickerSource, setPickerSource] = useState<'profile' | 'adding' | 'dod'>('profile');
   const [tempDob, setTempDob] = useState<Date | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
+  const [activeTab, setActiveTab] = useState<'details' | 'family' | 'insights'>('details');
 
   const inputBg = useThemeColor({}, 'card');
+  const cardBg = useThemeColor({}, 'card');
   const border = useThemeColor({}, 'border');
   const tint = useThemeColor({}, 'tint');
   const textColor = useThemeColor({}, 'text');
@@ -90,10 +95,12 @@ export default function MemberScreen() {
     if (member) {
       setSexInput(member.sex || '');
       setDobInput(member.dob || '');
+      setDodInput(member.dod || '');
       setTempDob(member.dob ? new Date(member.dob) : null);
     } else {
       setSexInput('');
       setDobInput('');
+      setDodInput('');
       setTempDob(null);
     }
   }, [member]);
@@ -108,7 +115,11 @@ export default function MemberScreen() {
   const handleTogglePin = async () => {
     if (!member) return;
     const newPinnedState = !isPinned;
-    await FamilyService.setPinnedMemberId(newPinnedState ? member.id : null);
+    const newPinnedId = newPinnedState ? member.id : null;
+    await FamilyService.setPinnedMemberId(newPinnedId);
+    if (newPinnedId) {
+      await AsyncStorage.setItem('activeUserId', newPinnedId);
+    }
     setIsPinned(newPinnedState);
   };
 
@@ -179,10 +190,14 @@ export default function MemberScreen() {
     return `${y}-${m}-${day}`;
   };
 
-  const handleOpenDobPicker = (source: 'profile' | 'adding' = 'profile') => {
+  const handleOpenDatePicker = (source: 'profile' | 'adding' | 'dod' = 'profile') => {
     if (Platform.OS === 'web') return;
     setPickerSource(source);
-    const currentVal = source === 'profile' ? dobInput : newMemberDob;
+    let currentVal = '';
+    if (source === 'profile') currentVal = dobInput;
+    else if (source === 'dod') currentVal = dodInput;
+    else currentVal = newMemberDob;
+    
     const base = currentVal ? new Date(currentVal) : new Date();
     setTempDob(Number.isNaN(base.getTime()) ? new Date() : base);
     setShowDobPicker(true);
@@ -195,6 +210,8 @@ export default function MemberScreen() {
         const formatted = formatDate(selectedDate);
         if (pickerSource === 'profile') {
           setDobInput(formatted);
+        } else if (pickerSource === 'dod') {
+          setDodInput(formatted);
         } else {
           setNewMemberDob(formatted);
         }
@@ -217,6 +234,8 @@ export default function MemberScreen() {
     const formatted = formatDate(tempDob);
     if (pickerSource === 'profile') {
       setDobInput(formatted);
+    } else if (pickerSource === 'dod') {
+      setDodInput(formatted);
     } else {
       setNewMemberDob(formatted);
     }
@@ -231,12 +250,14 @@ export default function MemberScreen() {
 
     const cleanSex = sexInput.trim();
     const cleanDob = dobInput.trim();
+    const cleanDod = dodInput.trim();
     const age = computeAge(cleanDob || undefined);
 
     list[idx] = {
       ...list[idx],
       sex: cleanSex || undefined,
       dob: cleanDob || undefined,
+      dod: cleanDod || undefined,
       age,
     };
 
@@ -452,6 +473,7 @@ export default function MemberScreen() {
     };
   }, [member, members]);
 
+  const insets = useSafeAreaInsets();
   if (!member) return <ThemedView style={styles.container}><ThemedText>Loading...</ThemedText></ThemedView>;
 
   const handleBack = () => router.back();
@@ -469,324 +491,431 @@ export default function MemberScreen() {
           ),
         }}
       />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        <View style={styles.header}>
-          <Pressable onPress={handlePickProfilePhoto} style={[styles.avatarLarge, { backgroundColor: tint + '20', borderColor: tint }]}>
-            {member.photo ? (
-              <Image source={{ uri: member.photo }} style={styles.avatarImg} />
-            ) : (
-              <ThemedText style={{ color: tint, fontSize: 40, fontWeight: '800' }}>{member.name.charAt(0)}</ThemedText>
-            )}
-          </Pressable>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
+        >
           
-          <View style={{ alignItems: 'center', width: '100%', paddingHorizontal: 20 }}>
-            {isEditingName ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <TextInput
-                  value={editedName}
-                  onChangeText={setEditedName}
-                  autoFocus
-                  style={[styles.nameInput, { color: textColor, borderBottomColor: tint }]}
-                  onSubmitEditing={handleSaveName}
-                />
-                <Pressable onPress={handleSaveName}>
-                  <Ionicons name="checkmark-circle" size={24} color={tint} />
-                </Pressable>
+          <View style={styles.header}>
+            <View style={[styles.headerCover, { backgroundColor: tint + '10' }]} />
+            <Pressable onPress={handlePickProfilePhoto} style={[styles.avatarLarge, { backgroundColor: cardBg, borderColor: tint }]}>
+              {member.photo ? (
+                <Image source={{ uri: member.photo }} style={styles.avatarImg} />
+              ) : (
+                <ThemedText style={{ color: tint, fontSize: 40, fontWeight: '800' }}>{member.name.charAt(0)}</ThemedText>
+              )}
+              <View style={[styles.editPhotoBadge, { backgroundColor: tint }]}>
+                <Ionicons name="camera" size={14} color="#fff" />
               </View>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ThemedText style={styles.profileName}>{member.name}</ThemedText>
-                <Pressable onPress={() => setIsEditingName(true)}>
-                  <Ionicons name="pencil" size={16} color={textColor} style={{ opacity: 0.5 }} />
-                </Pressable>
-              </View>
-            )}
+            </Pressable>
+            
+            <View style={{ alignItems: 'center', width: '100%', paddingHorizontal: 20 }}>
+              {isEditingName ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput
+                    value={editedName}
+                    onChangeText={setEditedName}
+                    autoFocus
+                    style={[styles.nameInput, { color: textColor, borderBottomColor: tint }]}
+                    onSubmitEditing={handleSaveName}
+                  />
+                  <Pressable onPress={handleSaveName}>
+                    <Ionicons name="checkmark-circle" size={24} color={tint} />
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ThemedText style={styles.profileName}>{member.name}</ThemedText>
+                  <Pressable onPress={() => setIsEditingName(true)}>
+                    <Ionicons name="pencil" size={16} color={textColor} style={{ opacity: 0.5 }} />
+                  </Pressable>
+                </View>
+              )}
+            </View>
+
+            <Pressable 
+              onPress={handleTogglePin}
+              style={[styles.pinToggle, { backgroundColor: isPinned ? tint : tint + '15', borderColor: isPinned ? tint : border }]}
+            >
+              <Ionicons name={isPinned ? "pin" : "pin-outline"} size={16} color={isPinned ? "#fff" : tint} />
+              <ThemedText style={[styles.pinToggleText, { color: isPinned ? "#fff" : tint }]}>
+                {isPinned ? 'Pinned as Default' : 'Pin as Default'}
+              </ThemedText>
+            </Pressable>
+
+            {member.dob && <ThemedText style={styles.profileDob}>Born: {member.dob}</ThemedText>}
           </View>
 
-          <Pressable 
-            onPress={handleTogglePin}
-            style={[styles.pinToggle, { backgroundColor: isPinned ? tint : tint + '15', borderColor: isPinned ? tint : border }]}
-          >
-            <Ionicons name={isPinned ? "pin" : "pin-outline"} size={16} color={isPinned ? "#fff" : tint} />
-            <ThemedText style={[styles.pinToggleText, { color: isPinned ? "#fff" : tint }]}>
-              {isPinned ? 'Pinned as Default' : 'Pin as Default'}
-            </ThemedText>
-          </Pressable>
-
-          {member.dob && <ThemedText style={styles.profileDob}>Born: {member.dob}</ThemedText>}
-        </View>
-
-        <View style={[styles.section, styles.infoCard, { backgroundColor: inputBg, borderColor: border }]}>
-          <ThemedText style={styles.sectionTitle}>Profile</ThemedText>
-          <ThemedText style={styles.label}>Sex</ThemedText>
-          <View style={styles.sexRow}>
-            {['Male', 'Female', 'Other'].map((opt) => (
+          <View style={styles.tabBar}>
+            {(['details', 'family', 'insights'] as const).map((tab) => (
               <Pressable
-                key={opt}
-                style={[styles.sexChip, sexInput === opt && { backgroundColor: tint, borderColor: tint }]}
-                onPress={() => setSexInput(opt)}
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                style={[styles.tab, activeTab === tab && { borderBottomColor: tint }]}
               >
-                <ThemedText style={[styles.sexChipText, sexInput === opt && { color: '#fff' }]}>{opt}</ThemedText>
+                <ThemedText style={[styles.tabText, activeTab === tab && { color: tint, fontWeight: '800' }]}>
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </ThemedText>
               </Pressable>
             ))}
           </View>
-          {Platform.OS === 'web' ? (
-            <TextInput
-              placeholder="DOB (YYYY-MM-DD)"
-              placeholderTextColor="#94a3b8"
-              value={dobInput}
-              onChangeText={setDobInput}
-              style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]}
-            />
-          ) : (
-            <Pressable onPress={() => handleOpenDobPicker('profile')}>
-              <TextInput
-                placeholder="DOB (YYYY-MM-DD)"
-                placeholderTextColor="#94a3b8"
-                value={dobInput}
-                editable={false}
-                style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0', pointerEvents: 'none' }]}
-              />
-            </Pressable>
-          )}
-          <ThemedText style={styles.metaText}>Age: {computeAge(dobInput) ?? '—'}</ThemedText>
-          <Pressable style={[styles.saveBtn, { backgroundColor: tint }]} onPress={handleSaveProfileInfo}>
-            <ThemedText style={{ color: '#fff', fontWeight: '800' }}>Save Profile</ThemedText>
-          </Pressable>
-        </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <ThemedText style={styles.sectionTitle}>Relationships</ThemedText>
-            <Pressable style={[styles.addButton, { backgroundColor: tint }]} onPress={() => setAdding(true)}>
-              <ThemedText style={styles.addButtonText}>+ Add</ThemedText>
-            </Pressable>
-          </View>
-
-          {member.relations && member.relations.length > 0 ? (
-            member.relations.map((rel, idx) => {
-              const target = members.find(m => m.id === rel.targetId);
-              return (
-                <View key={idx} style={[styles.relationCard, { backgroundColor: inputBg, borderColor: border }]}>
-                  <View style={[styles.avatarSmall, { backgroundColor: tint + '20' }]}>
-                    {target?.photo ? <Image source={{ uri: target.photo }} style={styles.avatarImg} /> : <ThemedText style={{ color: tint, fontWeight: '700' }}>{target?.name.charAt(0) || '?'}</ThemedText>}
-                  </View>
-                  <View style={styles.relationInfo}>
-                    <ThemedText style={styles.relationName}>{target?.name || 'Unknown'}</ThemedText>
-                    <ThemedText style={styles.relationType}>{rel.type}</ThemedText>
-                  </View>
-                  <View style={styles.relationActions}>
-                    <Pressable onPress={() => handleStartEdit(idx)} style={styles.actionBtn}>
-                      <ThemedText style={{ color: tint }}>Edit</ThemedText>
-                    </Pressable>
-                    <Pressable onPress={() => handleRemoveRelation(idx)} style={styles.actionBtn}>
-                      <ThemedText style={{ color: '#ef4444' }}>Remove</ThemedText>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            })
-          ) : (
-            <ThemedText style={styles.emptyText}>No relationships added yet.</ThemedText>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <ThemedText style={styles.sectionTitle}>Family Insights</ThemedText>
-          <View style={[styles.relationSummary, { borderColor: border }]}> 
-            <ThemedText style={styles.summaryLabel}>Siblings</ThemedText>
-            <ThemedText style={styles.summaryValue}>{derivedRelations.siblings.map((m) => m.name).join(', ') || '—'}</ThemedText>
-          </View>
-          <View style={[styles.relationSummary, { borderColor: border }]}> 
-            <ThemedText style={styles.summaryLabel}>Grandparents</ThemedText>
-            <ThemedText style={styles.summaryValue}>{derivedRelations.grandparents.map((m) => m.name).join(', ') || '—'}</ThemedText>
-          </View>
-          <View style={[styles.relationSummary, { borderColor: border }]}> 
-            <ThemedText style={styles.summaryLabel}>Cousins</ThemedText>
-            <ThemedText style={styles.summaryValue}>{derivedRelations.cousins.map((m) => m.name).join(', ') || '—'}</ThemedText>
-          </View>
-          <View style={[styles.relationSummary, { borderColor: border }]}> 
-            <ThemedText style={styles.summaryLabel}>Nephew/Niece</ThemedText>
-            <ThemedText style={styles.summaryValue}>{derivedRelations.nephews.map((m) => m.name).join(', ') || '—'}</ThemedText>
-          </View>
-        </View>
-      </ScrollView>
-
-      {adding && (
-        <Modal transparent animationType="fade" visible={adding} onRequestClose={() => setAdding(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: inputBg }]}>
-              <ThemedText style={styles.modalTitle}>Add Relationship</ThemedText>
-              
-              <ThemedText style={styles.label}>Relation Type</ThemedText>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                {RELATION_TYPES.map(t => (
-                  <Pressable key={t} style={[styles.chip, selectedType === t && { backgroundColor: tint, borderColor: tint }, { borderColor: border }]} onPress={() => setSelectedType(t)}>
-                    <ThemedText style={[styles.chipText, selectedType === t && { color: '#fff' }]}>{t}</ThemedText>
+          {activeTab === 'details' && (
+            <View style={[styles.section, styles.infoCard, { backgroundColor: inputBg, borderColor: border }]}>
+              <ThemedText style={styles.sectionTitle}>Personal Details</ThemedText>
+              <ThemedText style={styles.label}>Sex</ThemedText>
+              <View style={styles.sexRow}>
+                {['Male', 'Female', 'Other'].map((opt) => (
+                  <Pressable
+                    key={opt}
+                    style={[styles.sexChip, sexInput === opt && { backgroundColor: tint, borderColor: tint }]}
+                    onPress={() => setSexInput(opt)}
+                  >
+                    <ThemedText style={[styles.sexChipText, sexInput === opt && { color: '#fff' }]}>{opt}</ThemedText>
                   </Pressable>
                 ))}
-              </ScrollView>
-
-              <View style={styles.toggleContainer}>
-                <Pressable style={[styles.toggle, !addNewMember && { backgroundColor: tint }]} onPress={() => setAddNewMember(false)}>
-                  <ThemedText style={[styles.toggleText, !addNewMember && { color: '#fff' }]}>Existing</ThemedText>
+              </View>
+              <ThemedText style={styles.label}>Date of Birth</ThemedText>
+              {Platform.OS === 'web' ? (
+                <TextInput
+                  placeholder="DOB (YYYY-MM-DD)"
+                  placeholderTextColor="#94a3b8"
+                  value={dobInput}
+                  onChangeText={setDobInput}
+                  style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]}
+                />
+              ) : (
+                <Pressable onPress={() => handleOpenDatePicker('profile')}>
+                  <TextInput
+                    placeholder="DOB (YYYY-MM-DD)"
+                    placeholderTextColor="#94a3b8"
+                    value={dobInput}
+                    editable={false}
+                    style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0', pointerEvents: 'none' }]}
+                  />
                 </Pressable>
-                <Pressable style={[styles.toggle, addNewMember && { backgroundColor: tint }]} onPress={() => setAddNewMember(true)}>
-                  <ThemedText style={[styles.toggleText, addNewMember && { color: '#fff' }]}>New</ThemedText>
+              )}
+
+              <ThemedText style={styles.label}>Date of Death (Optional)</ThemedText>
+              {Platform.OS === 'web' ? (
+                <TextInput
+                  placeholder="DOD (YYYY-MM-DD)"
+                  placeholderTextColor="#94a3b8"
+                  value={dodInput}
+                  onChangeText={setDodInput}
+                  style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]}
+                />
+              ) : (
+                <Pressable onPress={() => handleOpenDatePicker('dod')}>
+                  <TextInput
+                    placeholder="DOD (YYYY-MM-DD)"
+                    placeholderTextColor="#94a3b8"
+                    value={dodInput}
+                    editable={false}
+                    style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0', pointerEvents: 'none' }]}
+                  />
+                </Pressable>
+              )}
+              <ThemedText style={styles.metaText}>Age: {computeAge(dobInput) ?? '—'}</ThemedText>
+              <Pressable style={[styles.saveBtn, { backgroundColor: tint }]} onPress={handleSaveProfileInfo}>
+                <ThemedText style={{ color: '#fff', fontWeight: '800' }}>Save Changes</ThemedText>
+              </Pressable>
+            </View>
+          )}
+
+          {activeTab === 'family' && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <ThemedText style={styles.sectionTitle}>Relationships</ThemedText>
+                <Pressable style={[styles.addButton, { backgroundColor: tint }]} onPress={() => setAdding(true)}>
+                  <ThemedText style={styles.addButtonText}>+ Add</ThemedText>
                 </Pressable>
               </View>
 
-              {addNewMember ? (
-                <View>
-                  <TextInput 
-                    placeholder="Name" 
-                    placeholderTextColor="#94a3b8" 
-                    style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]} 
-                    value={newMemberName} 
-                    onChangeText={setNewMemberName} 
-                  />
-                  
-                  <ThemedText style={styles.label}>Sex</ThemedText>
-                  <View style={styles.sexRow}>
-                    {['Male', 'Female', 'Other'].map((opt) => (
-                      <Pressable
-                        key={opt}
-                        style={[styles.sexChip, newMemberSex === opt && { backgroundColor: tint, borderColor: tint }]}
-                        onPress={() => setNewMemberSex(opt as any)}
-                      >
-                        <ThemedText style={[styles.sexChipText, newMemberSex === opt && { color: '#fff' }]}>{opt}</ThemedText>
-                      </Pressable>
-                    ))}
-                  </View>
+              <View style={styles.quickActions}>
+                {(['parent', 'child', 'spouse', 'sibling'] as const).map((type) => (
+                  <Pressable
+                    key={type}
+                    onPress={() => { setSelectedType(type); setAdding(true); }}
+                    style={[styles.quickActionBtn, { backgroundColor: tint + '10', borderColor: tint + '30' }]}
+                  >
+                    <Ionicons name="add-circle-outline" size={18} color={tint} />
+                    <ThemedText style={[styles.quickActionText, { color: tint }]}>{type}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
 
-                  <ThemedText style={styles.label}>Date of Birth</ThemedText>
-                  {Platform.OS === 'web' ? (
-                    <TextInput
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#94a3b8"
-                      value={newMemberDob}
-                      onChangeText={setNewMemberDob}
-                      style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]}
+              {member.relations && member.relations.length > 0 ? (
+                member.relations.map((rel, idx) => {
+                  const target = members.find(m => m.id === rel.targetId);
+                  return (
+                    <Pressable 
+                      key={idx} 
+                      onPress={() => router.push(`/member?id=${target?.id}`)}
+                      style={[styles.relationCard, { backgroundColor: inputBg, borderColor: border }]}
+                    >
+                      <View style={[styles.avatarSmall, { backgroundColor: tint + '20' }]}>
+                        {target?.photo ? <Image source={{ uri: target.photo }} style={styles.avatarImg} /> : <ThemedText style={{ color: tint, fontWeight: '700' }}>{target?.name.charAt(0) || '?'}</ThemedText>}
+                      </View>
+                      <View style={styles.relationInfo}>
+                        <ThemedText style={styles.relationName}>{target?.name || 'Unknown'}</ThemedText>
+                        <ThemedText style={styles.relationType}>{rel.type}</ThemedText>
+                      </View>
+                      <View style={styles.relationActions}>
+                        <Pressable onPress={() => handleStartEdit(idx)} style={styles.actionBtn}>
+                          <Ionicons name="pencil" size={18} color={tint} />
+                        </Pressable>
+                        <Pressable onPress={() => handleRemoveRelation(idx)} style={styles.actionBtn}>
+                          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        </Pressable>
+                      </View>
+                    </Pressable>
+                  );
+                })
+              ) : (
+                <ThemedText style={styles.emptyText}>No relationships added yet.</ThemedText>
+              )}
+            </View>
+          )}
+
+          {activeTab === 'insights' && (
+            <View style={styles.section}>
+              <ThemedText style={styles.sectionTitle}>Family Insights</ThemedText>
+              <View style={styles.insightsGrid}>
+                <View style={[styles.insightCard, { backgroundColor: inputBg, borderColor: border }]}>
+                  <Ionicons name="people-outline" size={24} color={tint} />
+                  <ThemedText style={styles.summaryLabel}>Siblings</ThemedText>
+                  <ThemedText style={styles.summaryValue} numberOfLines={2}>
+                    {derivedRelations.siblings.map((m) => m.name).join(', ') || 'None'}
+                  </ThemedText>
+                </View>
+                <View style={[styles.insightCard, { backgroundColor: inputBg, borderColor: border }]}>
+                  <Ionicons name="business-outline" size={24} color="#3b82f6" />
+                  <ThemedText style={styles.summaryLabel}>Grandparents</ThemedText>
+                  <ThemedText style={styles.summaryValue} numberOfLines={2}>
+                    {derivedRelations.grandparents.map((m) => m.name).join(', ') || 'None'}
+                  </ThemedText>
+                </View>
+                <View style={[styles.insightCard, { backgroundColor: inputBg, borderColor: border }]}>
+                  <Ionicons name="heart-outline" size={24} color="#ef4444" />
+                  <ThemedText style={styles.summaryLabel}>Cousins</ThemedText>
+                  <ThemedText style={styles.summaryValue} numberOfLines={2}>
+                    {derivedRelations.cousins.map((m) => m.name).join(', ') || 'None'}
+                  </ThemedText>
+                </View>
+                <View style={[styles.insightCard, { backgroundColor: inputBg, borderColor: border }]}>
+                  <Ionicons name="star-outline" size={24} color="#f59e0b" />
+                  <ThemedText style={styles.summaryLabel}>Nephew/Niece</ThemedText>
+                  <ThemedText style={styles.summaryValue} numberOfLines={2}>
+                    {derivedRelations.nephews.map((m) => m.name).join(', ') || 'None'}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {adding && (
+          <Modal transparent animationType="fade" visible={adding} onRequestClose={() => setAdding(false)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: inputBg }]}>
+                <ThemedText style={styles.modalTitle}>Add Relationship</ThemedText>
+                
+                <ThemedText style={styles.label}>Relation Type</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                  {RELATION_TYPES.map(t => (
+                    <Pressable key={t} style={[styles.chip, selectedType === t && { backgroundColor: tint, borderColor: tint }, { borderColor: border }]} onPress={() => setSelectedType(t)}>
+                      <ThemedText style={[styles.chipText, selectedType === t && { color: '#fff' }]}>{t}</ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                <View style={styles.toggleContainer}>
+                  <Pressable style={[styles.toggle, !addNewMember && { backgroundColor: tint }]} onPress={() => setAddNewMember(false)}>
+                    <ThemedText style={[styles.toggleText, !addNewMember && { color: '#fff' }]}>Existing</ThemedText>
+                  </Pressable>
+                  <Pressable style={[styles.toggle, addNewMember && { backgroundColor: tint }]} onPress={() => setAddNewMember(true)}>
+                    <ThemedText style={[styles.toggleText, addNewMember && { color: '#fff' }]}>New</ThemedText>
+                  </Pressable>
+                </View>
+
+                {addNewMember ? (
+                  <View>
+                    <TextInput 
+                      placeholder="Name" 
+                      placeholderTextColor="#94a3b8" 
+                      style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]} 
+                      value={newMemberName} 
+                      onChangeText={setNewMemberName} 
                     />
-                  ) : (
-                    <Pressable onPress={() => handleOpenDobPicker('adding')}>
+                    
+                    <ThemedText style={styles.label}>Sex</ThemedText>
+                    <View style={styles.sexRow}>
+                      {['Male', 'Female', 'Other'].map((opt) => (
+                        <Pressable
+                          key={opt}
+                          style={[styles.sexChip, newMemberSex === opt && { backgroundColor: tint, borderColor: tint }]}
+                          onPress={() => setNewMemberSex(opt as any)}
+                        >
+                          <ThemedText style={[styles.sexChipText, newMemberSex === opt && { color: '#fff' }]}>{opt}</ThemedText>
+                        </Pressable>
+                      ))}
+                    </View>
+
+                    <ThemedText style={styles.label}>Date of Birth</ThemedText>
+                    {Platform.OS === 'web' ? (
                       <TextInput
                         placeholder="YYYY-MM-DD"
                         placeholderTextColor="#94a3b8"
                         value={newMemberDob}
-                        editable={false}
-                        style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0', pointerEvents: 'none' }]}
+                        onChangeText={setNewMemberDob}
+                        style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0' }]}
                       />
-                    </Pressable>
-                  )}
+                    ) : (
+                      <Pressable onPress={() => handleOpenDatePicker('adding')}>
+                        <TextInput
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor="#94a3b8"
+                          value={newMemberDob}
+                          editable={false}
+                          style={[styles.input, { borderColor: border, color: textColor, backgroundColor: '#fff0', pointerEvents: 'none' }]}
+                        />
+                      </Pressable>
+                    )}
+                  </View>
+                ) : (
+                  <ScrollView style={styles.memberList}>
+                    {members.filter(m => m.id !== member.id).map(m => (
+                      <Pressable key={m.id} style={styles.memberRow} onPress={() => handleAddRelationTo(m.id)}>
+                        <ThemedText style={{ color: textColor }}>{m.name}</ThemedText>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
+
+                <View style={styles.modalButtons}>
+                  {addNewMember && <Pressable style={[styles.modalBtn, { backgroundColor: tint }]} onPress={handleAddNewMember}><ThemedText style={{ color: '#fff', fontWeight: '700' }}>Save</ThemedText></Pressable>}
+                  <Pressable style={styles.modalBtn} onPress={() => setAdding(false)}><ThemedText style={{ color: textColor, fontWeight: '700' }}>Cancel</ThemedText></Pressable>
                 </View>
-              ) : (
-                <ScrollView style={styles.memberList}>
-                  {members.filter(m => m.id !== member.id).map(m => (
-                    <Pressable key={m.id} style={styles.memberRow} onPress={() => handleAddRelationTo(m.id)}>
-                      <ThemedText style={{ color: textColor }}>{m.name}</ThemedText>
+              </View>
+
+            </View>
+          </Modal>
+        )}
+
+        {editingIndex !== null && (
+          <Modal transparent animationType="fade" visible={editingIndex !== null} onRequestClose={() => setEditingIndex(null)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: inputBg }]}>
+                <ThemedText style={styles.modalTitle}>Edit Relationship</ThemedText>
+                <ThemedText style={styles.label}>Relation Type</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                  {RELATION_TYPES.map(t => (
+                    <Pressable key={t} style={[styles.chip, editingType === t && { backgroundColor: tint, borderColor: tint }, { borderColor: border }]} onPress={() => setEditingType(t)}>
+                      <ThemedText style={[styles.chipText, editingType === t && { color: '#fff' }]}>{t}</ThemedText>
                     </Pressable>
                   ))}
                 </ScrollView>
-              )}
-
-              <View style={styles.modalButtons}>
-                {addNewMember && <Pressable style={[styles.modalBtn, { backgroundColor: tint }]} onPress={handleAddNewMember}><ThemedText style={{ color: '#fff', fontWeight: '700' }}>Save</ThemedText></Pressable>}
-                <Pressable style={styles.modalBtn} onPress={() => setAdding(false)}><ThemedText style={{ color: textColor, fontWeight: '700' }}>Cancel</ThemedText></Pressable>
+                <View style={styles.modalButtons}>
+                  <Pressable style={[styles.modalBtn, { backgroundColor: tint }]} onPress={handleSaveEdit}><ThemedText style={{ color: '#fff', fontWeight: '700' }}>Save</ThemedText></Pressable>
+                  <Pressable style={styles.modalBtn} onPress={() => setEditingIndex(null)}><ThemedText style={{ color: textColor, fontWeight: '700' }}>Cancel</ThemedText></Pressable>
+                </View>
               </View>
             </View>
+          </Modal>
+        )}
 
-          </View>
-        </Modal>
-      )}
 
-      {editingIndex !== null && (
-        <Modal transparent animationType="fade" visible={editingIndex !== null} onRequestClose={() => setEditingIndex(null)}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: inputBg }]}>
-              <ThemedText style={styles.modalTitle}>Edit Relationship</ThemedText>
-              <ThemedText style={styles.label}>Relation Type</ThemedText>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                {RELATION_TYPES.map(t => (
-                  <Pressable key={t} style={[styles.chip, editingType === t && { backgroundColor: tint, borderColor: tint }, { borderColor: border }]} onPress={() => setEditingType(t)}>
-                    <ThemedText style={[styles.chipText, editingType === t && { color: '#fff' }]}>{t}</ThemedText>
+        {showDobPicker && (
+          <Modal transparent animationType="fade" visible={showDobPicker} onRequestClose={() => setShowDobPicker(false)}>
+            <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
+              <View style={[styles.modalContent, { backgroundColor: inputBg }]}> 
+                <ThemedText style={styles.modalTitle}>
+                  {pickerSource === 'dod' ? 'Select DOD' : 'Select DOB'}
+                </ThemedText>
+                <View style={{ height: 200, overflow: 'hidden', width: '100%' }}>
+                  <DateTimePicker
+                    value={tempDob || new Date()}
+                    mode="date"
+                    display="spinner"
+                    onChange={handleDobPickerChange}
+                    maximumDate={new Date()}
+                  />
+                </View>
+                <View style={[styles.modalButtons, { marginTop: 20 }]}> 
+                  <Pressable 
+                    style={[styles.modalBtn, { borderWidth: 1, borderColor: border, minWidth: 80 }]} 
+                    onPress={() => setShowDobPicker(false)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <ThemedText style={{ color: textColor, fontWeight: '700', textAlign: 'center' }}>Cancel</ThemedText>
                   </Pressable>
-                ))}
-              </ScrollView>
-              <View style={styles.modalButtons}>
-                <Pressable style={[styles.modalBtn, { backgroundColor: tint }]} onPress={handleSaveEdit}><ThemedText style={{ color: '#fff', fontWeight: '700' }}>Save</ThemedText></Pressable>
-                <Pressable style={styles.modalBtn} onPress={() => setEditingIndex(null)}><ThemedText style={{ color: textColor, fontWeight: '700' }}>Cancel</ThemedText></Pressable>
+                  <Pressable 
+                    style={[styles.modalBtn, { backgroundColor: tint, minWidth: 80 }]} 
+                    onPress={handleConfirmDob}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <ThemedText style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Confirm</ThemedText>
+                  </Pressable>
+                </View>
               </View>
             </View>
-          </View>
-        </Modal>
-      )}
-
-
-{showDobPicker && (
-        <Modal transparent animationType="fade" visible={showDobPicker} onRequestClose={() => setShowDobPicker(false)}>
-          <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
-            <View style={[styles.modalContent, { backgroundColor: inputBg }]}> 
-              <ThemedText style={styles.modalTitle}>Select DOB</ThemedText>
-              <View style={{ height: 200, overflow: 'hidden', width: '100%' }}>
-                <DateTimePicker
-                  value={tempDob || new Date()}
-                  mode="date"
-                  display="spinner"
-                  onChange={handleDobPickerChange}
-                  maximumDate={new Date()}
-                />
-              </View>
-              <View style={[styles.modalButtons, { marginTop: 20 }]}> 
-                <Pressable 
-                  style={[styles.modalBtn, { borderWidth: 1, borderColor: border, minWidth: 80 }]} 
-                  onPress={() => setShowDobPicker(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <ThemedText style={{ color: textColor, fontWeight: '700', textAlign: 'center' }}>Cancel</ThemedText>
-                </Pressable>
-                <Pressable 
-                  style={[styles.modalBtn, { backgroundColor: tint, minWidth: 80 }]} 
-                  onPress={handleConfirmDob}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <ThemedText style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Confirm</ThemedText>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </KeyboardAvoidingView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scrollContent: { padding: 20 },
-  header: { alignItems: 'center', marginBottom: 32 },
-  avatarLarge: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 16 },
-  avatarImg: { width: '100%', height: '100%' },
-  profileName: { fontSize: 24, fontWeight: '800' },
+  scrollContent: { paddingBottom: 40 },
+  header: { alignItems: 'center', marginBottom: 24, position: 'relative' },
+  headerCover: { position: 'absolute', top: -100, left: -100, right: -100, height: 240, opacity: 0.5 },
+  avatarLarge: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, alignItems: 'center', justifyContent: 'center', overflow: 'visible', marginTop: 40, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  avatarImg: { width: '100%', height: '100%', borderRadius: 60 },
+  editPhotoBadge: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
+  profileName: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
   nameInput: { fontSize: 24, fontWeight: '800', borderBottomWidth: 2, paddingVertical: 0, minWidth: 150, textAlign: 'center' },
   pinToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, marginTop: 12, marginBottom: 4 },
   pinToggleText: { fontSize: 12, fontWeight: '700' },
   profileDob: { fontSize: 14, color: '#64748b', marginTop: 4 },
-  section: { marginBottom: 24 },
-  infoCard: { borderWidth: 1, borderRadius: 16, padding: 16 },
+  
+  tabBar: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  tab: { paddingVertical: 12, marginRight: 24, borderBottomWidth: 3, borderBottomColor: 'transparent' },
+  tabText: { fontSize: 15, fontWeight: '600', color: '#94a3b8' },
+
+  section: { paddingHorizontal: 20, marginBottom: 32 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: '700' },
+  sectionTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
+  infoCard: { borderWidth: 1, borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  quickActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
+  quickActionText: { fontSize: 13, fontWeight: '700', textTransform: 'capitalize' },
+
   addButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   addButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  relationCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 16, borderWidth: 1, marginBottom: 12 },
-  avatarSmall: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginRight: 12 },
+  
+  relationCard: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 18, borderWidth: 1, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
+  avatarSmall: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginRight: 14 },
   relationInfo: { flex: 1 },
-  relationName: { fontSize: 16, fontWeight: '600' },
-  relationType: { fontSize: 12, color: '#64748b', textTransform: 'capitalize' },
-  relationActions: { flexDirection: 'row', gap: 8 },
-  actionBtn: { padding: 4 },
-  emptyText: { textAlign: 'center', color: '#94a3b8', marginTop: 20 },
+  relationName: { fontSize: 17, fontWeight: '700' },
+  relationType: { fontSize: 13, color: '#64748b', textTransform: 'capitalize', marginTop: 2 },
+  relationActions: { flexDirection: 'row', gap: 4 },
+  actionBtn: { padding: 8, borderRadius: 10 },
+  
+  insightsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  insightCard: { width: '48%', padding: 16, borderRadius: 20, borderWidth: 1, alignItems: 'flex-start', gap: 8 },
+  summaryLabel: { fontSize: 12, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryValue: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+
+  emptyText: { textAlign: 'center', color: '#94a3b8', marginTop: 20, fontStyle: 'italic' },
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalContent: { width: '100%', maxWidth: 400, borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
   modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 20 },
@@ -807,7 +936,4 @@ const styles = StyleSheet.create({
   memberRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
   modalBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
-  relationSummary: { borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 8 },
-  summaryLabel: { fontSize: 14, fontWeight: '700' },
-  summaryValue: { fontSize: 14, color: '#475569', marginTop: 4 },
 });

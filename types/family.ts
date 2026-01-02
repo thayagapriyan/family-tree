@@ -10,6 +10,7 @@ export interface Member {
   name: string;
   email?: string;
   dob?: string;
+  dod?: string;
   sex?: string;
   age?: number;
   photo?: string;

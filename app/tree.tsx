@@ -17,17 +17,20 @@ import * as Sharing from 'expo-sharing';
 import JSZip from 'jszip';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line, Path } from 'react-native-svg';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function TreeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [members, setMembers] = useState<Member[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
+  const [pinnedMemberId, setPinnedMemberId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const bgColor = useThemeColor({}, 'background');
@@ -36,7 +39,10 @@ export default function TreeScreen() {
   const textColor = useThemeColor({}, 'text');
   const tint = useThemeColor({}, 'tint');
 
-  const activeUser = useMemo(() => members.find(m => m.id === activeUserId), [members, activeUserId]);
+  const activeUser = useMemo(() => {
+    const id = pinnedMemberId || activeUserId;
+    return members.find(m => m.id === id) || members.find(m => m.id === activeUserId);
+  }, [members, activeUserId, pinnedMemberId]);
 
   const [relationModal, setRelationModal] = useState<{
     open: boolean;
@@ -52,7 +58,6 @@ export default function TreeScreen() {
   const [targetId, setTargetId] = useState<string | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pinnedMemberId, setPinnedMemberId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportText, setExportText] = useState('');
   const [importOpen, setImportOpen] = useState(false);
@@ -149,12 +154,18 @@ export default function TreeScreen() {
     const pinnedId = await FamilyService.getPinnedMemberId();
     setPinnedMemberId(pinnedId);
     
-    const savedActiveId = await AsyncStorage.getItem('activeUserId');
-    if (savedActiveId && ensured.some(m => m.id === savedActiveId)) {
-      setActiveUserId(savedActiveId);
-    } else if (ensured.length > 0) {
-      setActiveUserId(ensured[0].id);
-      await AsyncStorage.setItem('activeUserId', ensured[0].id);
+    // Prioritize pinned member for active user (header icon)
+    if (pinnedId && ensured.some(m => m.id === pinnedId)) {
+      setActiveUserId(pinnedId);
+      await AsyncStorage.setItem('activeUserId', pinnedId);
+    } else {
+      const savedActiveId = await AsyncStorage.getItem('activeUserId');
+      if (savedActiveId && ensured.some(m => m.id === savedActiveId)) {
+        setActiveUserId(savedActiveId);
+      } else if (ensured.length > 0) {
+        setActiveUserId(ensured[0].id);
+        await AsyncStorage.setItem('activeUserId', ensured[0].id);
+      }
     }
 
     setActiveMemberId(null);
@@ -1234,7 +1245,7 @@ export default function TreeScreen() {
         <Modal transparent animationType="none" visible={settingsOpen} onRequestClose={() => setSettingsOpen(false)}>
           <View style={styles.drawerOverlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setSettingsOpen(false)} />
-            <Animated.View style={[styles.drawerContent, { backgroundColor: cardColor, borderColor: borderColor }]}>
+            <Animated.View style={[styles.drawerContent, { backgroundColor: cardColor, borderColor: borderColor, paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, paddingHorizontal: 4 }}>
                 <ThemedText style={[styles.modalTitle, { color: textColor, marginBottom: 0 }]}>Menu</ThemedText>
                 <Pressable onPress={() => setSettingsOpen(false)}>
@@ -1461,7 +1472,7 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     height: '100%',
     padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: Platform.OS === 'ios' ? Math.max(40, insets.top) : 40,
     borderRightWidth: 1,
     elevation: 16,
     shadowColor: '#000',
