@@ -327,11 +327,7 @@ export default function TreeScreen() {
 
   const handleExportPress = useCallback(() => {
     if (Platform.OS === 'web') {
-      Alert.alert('Export', 'Choose export method', [
-        { text: 'Download ZIP', onPress: () => void exportToZipWeb() },
-        { text: 'Copy JSON', onPress: openExportModal },
-        { text: 'Cancel', style: 'cancel' },
-      ]);
+      openExportModal();
       return;
     }
 
@@ -467,9 +463,16 @@ export default function TreeScreen() {
       await importFromZip(asset.uri);
     } else {
       try {
-        const text = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+        let text = '';
+        if (Platform.OS === 'web') {
+          const response = await fetch(asset.uri);
+          text = await response.text();
+        } else {
+          text = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+        }
         await importFromJsonText(text);
-      } catch {
+      } catch (err) {
+        console.error('Import error:', err);
         Alert.alert('Import failed', 'Could not read the selected file.');
       }
     }
@@ -1180,16 +1183,35 @@ export default function TreeScreen() {
           <View style={styles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeExport} />
             <View style={[styles.modalCard, { backgroundColor: cardColor, borderColor: borderColor }]}>
-              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Export JSON</ThemedText>
-              <ThemedText style={{ color: textColor, opacity: 0.8, marginBottom: 10 }}>
-                Copy this JSON and keep it safe.
-              </ThemedText>
-              <ScrollView style={{ maxHeight: 280, marginBottom: 12 }}>
+              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Export Family Data</ThemedText>
+              
+              {Platform.OS === 'web' && (
+                <Pressable 
+                  onPress={() => { closeExport(); void exportToZipWeb(); }}
+                  style={[styles.settingsItem, { backgroundColor: bgColor, borderColor: borderColor, marginBottom: 16 }]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <View style={[styles.settingsIcon, { backgroundColor: '#3b82f615' }]}>
+                      <Ionicons name="archive-outline" size={20} color="#3b82f6" />
+                    </View>
+                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Download ZIP (with photos)</ThemedText>
+                  </View>
+                  <Ionicons name="download-outline" size={18} color="#3b82f6" />
+                </Pressable>
+              )}
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: borderColor, opacity: 0.3 }} />
+                <ThemedText style={{ fontSize: 12, color: '#94a3b8', fontWeight: '700' }}>JSON DATA</ThemedText>
+                <View style={{ flex: 1, height: 1, backgroundColor: borderColor, opacity: 0.3 }} />
+              </View>
+
+              <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
                 <TextInput
                   value={exportText}
                   editable={false}
                   multiline
-                  style={[styles.jsonBox, { backgroundColor: bgColor, borderColor: borderColor, color: textColor }]}
+                  style={[styles.jsonBox, { backgroundColor: bgColor, borderColor: borderColor, color: textColor, minHeight: 100 }]}
                 />
               </ScrollView>
               <View style={styles.modalButtons}>
@@ -1214,18 +1236,35 @@ export default function TreeScreen() {
           <View style={styles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeImport} />
             <View style={[styles.modalCard, { backgroundColor: cardColor, borderColor: borderColor }]}>
-              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Import JSON</ThemedText>
-              <ThemedText style={{ color: textColor, opacity: 0.8, marginBottom: 10 }}>
-                Paste a previously exported JSON here.
-              </ThemedText>
-              <ScrollView style={{ maxHeight: 280, marginBottom: 12 }}>
+              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Import Family Data</ThemedText>
+              
+              <Pressable 
+                onPress={() => { closeImport(); void importFromFile(); }}
+                style={[styles.settingsItem, { backgroundColor: bgColor, borderColor: borderColor, marginBottom: 16 }]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={[styles.settingsIcon, { backgroundColor: tint + '15' }]}>
+                    <Ionicons name="document-attach-outline" size={20} color={tint} />
+                  </View>
+                  <ThemedText style={{ color: textColor, fontWeight: '600' }}>Select JSON or ZIP File</ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+              </Pressable>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <View style={{ flex: 1, height: 1, backgroundColor: borderColor, opacity: 0.3 }} />
+                <ThemedText style={{ fontSize: 12, color: '#94a3b8', fontWeight: '700' }}>OR PASTE JSON</ThemedText>
+                <View style={{ flex: 1, height: 1, backgroundColor: borderColor, opacity: 0.3 }} />
+              </View>
+
+              <ScrollView style={{ maxHeight: 200, marginBottom: 12 }}>
                 <TextInput
                   value={importText}
                   onChangeText={setImportText}
                   multiline
                   placeholder="Paste JSON here..."
                   placeholderTextColor="#94a3b8"
-                  style={[styles.jsonBox, { backgroundColor: bgColor, borderColor: borderColor, color: textColor }]}
+                  style={[styles.jsonBox, { backgroundColor: bgColor, borderColor: borderColor, color: textColor, minHeight: 100 }]}
                 />
               </ScrollView>
               <View style={styles.modalButtons}>
@@ -1233,7 +1272,7 @@ export default function TreeScreen() {
                   <ThemedText style={{ color: textColor, fontWeight: '700' }}>Cancel</ThemedText>
                 </Pressable>
                 <Pressable onPress={handleImport} style={[styles.modalBtn, { backgroundColor: tint, borderColor: tint }]}>
-                  <ThemedText style={{ color: '#fff', fontWeight: '700' }}>Import</ThemedText>
+                  <ThemedText style={{ color: '#fff', fontWeight: '700' }}>Import JSON</ThemedText>
                 </Pressable>
               </View>
             </View>
