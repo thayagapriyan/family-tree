@@ -52,6 +52,7 @@ export default function MemberScreen() {
   const [sexInput, setSexInput] = useState('');
   const [dobInput, setDobInput] = useState('');
   const [dodInput, setDodInput] = useState('');
+  const [notesInput, setNotesInput] = useState('');
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [pickerSource, setPickerSource] = useState<'profile' | 'adding' | 'dod'>('profile');
   const [tempDob, setTempDob] = useState<Date | null>(null);
@@ -96,11 +97,13 @@ export default function MemberScreen() {
       setSexInput(member.sex || '');
       setDobInput(member.dob || '');
       setDodInput(member.dod || '');
+      setNotesInput(member.notes || '');
       setTempDob(member.dob ? new Date(member.dob) : null);
     } else {
       setSexInput('');
       setDobInput('');
       setDodInput('');
+      setNotesInput('');
       setTempDob(null);
     }
   }, [member]);
@@ -269,6 +272,7 @@ export default function MemberScreen() {
     const cleanSex = sexInput.trim();
     const cleanDob = dobInput.trim();
     const cleanDod = dodInput.trim();
+    const cleanNotes = notesInput.trim();
     const age = computeAge(cleanDob || undefined);
 
     list[idx] = {
@@ -276,6 +280,7 @@ export default function MemberScreen() {
       sex: cleanSex || undefined,
       dob: cleanDob || undefined,
       dod: cleanDod || undefined,
+      notes: cleanNotes || undefined,
       age,
     };
 
@@ -633,6 +638,18 @@ export default function MemberScreen() {
                   <Ionicons name="calendar-outline" size={20} color={tint} />
                 </Pressable>
               </View>
+
+              <ThemedText style={styles.label}>Notes</ThemedText>
+              <TextInput
+                placeholder="Add notes about this person..."
+                placeholderTextColor="#94a3b8"
+                value={notesInput}
+                onChangeText={setNotesInput}
+                multiline
+                numberOfLines={4}
+                style={[styles.notesInput, { backgroundColor: inputBg, borderColor: border, color: textColor }]}
+              />
+
               <ThemedText style={styles.metaText}>Age: {computeAge(dobInput) ?? '—'}</ThemedText>
               <Pressable style={[styles.saveBtn, { backgroundColor: tint }]} onPress={handleSaveProfileInfo}>
                 <ThemedText style={{ color: '#fff', fontWeight: '800' }}>Save Changes</ThemedText>
@@ -889,7 +906,22 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 40 },
   header: { alignItems: 'center', marginBottom: 24, position: 'relative' },
   headerCover: { position: 'absolute', top: -100, left: -100, right: -100, height: 240, opacity: 0.5 },
-  avatarLarge: { width: 120, height: 120, borderRadius: 60, borderWidth: 4, alignItems: 'center', justifyContent: 'center', overflow: 'visible', marginTop: 40, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5 },
+  avatarLarge: { 
+    width: 120, 
+    height: 120, 
+    borderRadius: 60, 
+    borderWidth: 4, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    overflow: 'visible', 
+    marginTop: 40, 
+    marginBottom: 16, 
+    ...Platform.select({
+      web: { boxShadow: '0 4px 8px rgba(0,0,0,0.1)' },
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 }
+    }),
+    elevation: 5 
+  },
   avatarImg: { width: '100%', height: '100%', borderRadius: 60 },
   editPhotoBadge: { position: 'absolute', bottom: 0, right: 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff' },
   profileName: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
@@ -905,7 +937,16 @@ const styles = StyleSheet.create({
   section: { paddingHorizontal: 20, marginBottom: 32 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   sectionTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
-  infoCard: { borderWidth: 1, borderRadius: 20, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  infoCard: { 
+    borderWidth: 1, 
+    borderRadius: 20, 
+    padding: 20, 
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(0,0,0,0.05)' },
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10 }
+    }),
+    elevation: 2 
+  },
   
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   quickActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
@@ -914,7 +955,19 @@ const styles = StyleSheet.create({
   addButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   addButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   
-  relationCard: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 18, borderWidth: 1, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
+  relationCard: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 14, 
+    borderRadius: 18, 
+    borderWidth: 1, 
+    marginBottom: 12, 
+    ...Platform.select({
+      web: { boxShadow: '0 2px 5px rgba(0,0,0,0.03)' },
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5 }
+    }),
+    elevation: 1 
+  },
   avatarSmall: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginRight: 14 },
   relationInfo: { flex: 1 },
   relationName: { fontSize: 17, fontWeight: '700' },
@@ -929,7 +982,17 @@ const styles = StyleSheet.create({
 
   emptyText: { textAlign: 'center', color: '#94a3b8', marginTop: 20, fontStyle: 'italic' },
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalContent: { width: '100%', maxWidth: 400, borderRadius: 24, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
+  modalContent: { 
+    width: '100%', 
+    maxWidth: 400, 
+    borderRadius: 24, 
+    padding: 24, 
+    ...Platform.select({
+      web: { boxShadow: '0 10px 20px rgba(0,0,0,0.3)' },
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20 }
+    }),
+    elevation: 10 
+  },
   modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '600', color: '#64748b', marginBottom: 8 },
   chipScroll: { flexDirection: 'row', marginBottom: 16 },
@@ -954,6 +1017,15 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
     fontSize: 16,
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 16,
   },
   calendarIcon: {
     padding: 4,

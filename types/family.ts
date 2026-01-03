@@ -14,6 +14,7 @@ export interface Member {
   sex?: string;
   age?: number;
   photo?: string;
+  notes?: string;
   relations?: Relation[];
 }
 

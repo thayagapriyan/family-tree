@@ -77,7 +77,7 @@ export const SideTray = memo(({ isOpen, onClose, side, title, children }: SideTr
   if (!isRendered && !isOpen) return null;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 1000 }]} pointerEvents="box-none">
+    <View style={[StyleSheet.absoluteFill, { zIndex: 1000, pointerEvents: 'box-none' }]}>
       {/* Backdrop */}
       <Animated.View 
         style={[

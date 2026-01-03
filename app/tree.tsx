@@ -944,13 +944,13 @@ export default function TreeScreen() {
         >
           <Pressable style={{ flex: 1, width: contentWidth, height: contentHeight, paddingBottom: 96 }} onPress={() => setExpandedNodeId(null)}>
             <Animated.View 
-              pointerEvents={expandedNodeId ? 'auto' : 'none'}
               style={[
                 StyleSheet.absoluteFill, 
                 { 
                   backgroundColor: 'rgba(0,0,0,0.4)', 
                   zIndex: 500,
-                  opacity: backdropAnim 
+                  opacity: backdropAnim,
+                  pointerEvents: expandedNodeId ? 'auto' : 'none'
                 }
               ]} 
             />
@@ -1548,10 +1548,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     zIndex: 100,
     elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 4px rgba(0,0,0,0.2)' },
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 }
+    }),
   },
   doneBtnText: {
     color: '#fff',
