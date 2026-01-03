@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { MiniMap } from '@/components/tree/MiniMap';
 import { TreeNode } from '@/components/tree/TreeNode';
 import { ZoomPanContainer } from '@/components/ZoomPanContainer';
 import { useThemeColor } from '@/hooks/useThemeColor';
@@ -45,28 +46,88 @@ export default function TreeScreen() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [currentZoom, setCurrentZoom] = useState(1);
-  const [containerDims, setContainerDims] = useState({ width: SCREEN_W, height: SCREEN_H - 180 });
+  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1, width: SCREEN_W, height: SCREEN_H - 240 });
+  const [showMiniMap, setShowMiniMap] = useState(true);
+  const [containerDims, setContainerDims] = useState({ width: SCREEN_W, height: SCREEN_H - 240 });
+  const [toast, setToast] = useState<string | null>(null);
+  const toastsRef = useRef<string[]>([]);
+  const toastActiveRef = useRef(false);
+  const backdropAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(backdropAnim, {
+      toValue: expandedNodeId ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [expandedNodeId, backdropAnim]);
+
+  const enqueueToast = useCallback((msg: string) => {
+    if (!toastActiveRef.current) {
+      toastActiveRef.current = true;
+      setToast(msg);
+      setTimeout(() => {
+        setToast(null);
+        const processNext = () => {
+          const next = toastsRef.current.shift();
+          if (next) {
+            setToast(next);
+            setTimeout(() => {
+              setToast(null);
+              processNext();
+            }, 1800);
+          } else {
+            toastActiveRef.current = false;
+          }
+        };
+        processNext();
+      }, 1800);
+    } else {
+      toastsRef.current.push(msg);
+    }
+  }, []);
 
   const zoomPanContainerRef = useRef<any>(null);
 
-  const ensureDefaultMember = useCallback(async (userKey: string, list: Member[]) => {
-    if (list.length > 0) return list;
+  const handleTransform = useCallback((x: number, y: number, zoom: number) => {
+    setViewport(prev => ({ ...prev, x: -x / zoom, y: -y / zoom, zoom }));
+  }, []);
 
-    let name = 'Me';
-    let dob: string | undefined;
-    let email: string | undefined;
-    let photo: string | undefined;
+  const handleMapPress = useCallback((x: number, y: number) => {
+    zoomPanContainerRef.current?.focusOn(x, y, viewport.zoom);
+  }, [viewport.zoom]);
 
-    try {
-      const userRaw = await AsyncStorage.getItem(userKey);
-      const user = userRaw ? JSON.parse(userRaw) : null;
-      if (user?.name) name = user.name;
-      if (user?.dob) dob = user.dob;
-      if (user?.email) email = user.email;
-      if (user?.photo) photo = user.photo;
-    } catch {
-      // ignore and fallback to defaults
+  const autoHideMs = 3000;
+  const expandTimerRef = useRef<number | null>(null);
+  const clearExpandTimer = () => {
+    if (expandTimerRef.current) {
+      clearTimeout(expandTimerRef.current as any);
+      expandTimerRef.current = null;
     }
+  };
+
+  useEffect(() => {
+    clearExpandTimer();
+    if (expandedNodeId) {
+      expandTimerRef.current = setTimeout(() => {
+        setExpandedNodeId(null);
+        expandTimerRef.current = null;
+      }, autoHideMs) as unknown as number;
+    }
+    return () => clearExpandTimer();
+  }, [expandedNodeId]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpandedNodeId(null);
+    };
+    if (expandedNodeId) window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [expandedNodeId]);
+
+  const ensureDefaultMember = useCallback(async (list: Member[]) => {
+    if (list.length > 0) return list;
 
     const me: Member = {
       id: `${Date.now()}-${Math.floor(Math.random() * 10000)}`,
@@ -759,8 +820,17 @@ export default function TreeScreen() {
           minZoom={0.5}
           maxZoom={3}
           onZoomChange={setCurrentZoom}
-          initialFocusX={members[0] && centeredPositions[members[0].id] ? centeredPositions[members[0].id].x + 70 : undefined}
-          initialFocusY={members[0] && centeredPositions[members[0].id] ? centeredPositions[members[0].id].y + 40 : undefined}
+          onTransform={handleTransform}
+          initialFocusX={
+            pinnedMemberId && centeredPositions[pinnedMemberId] 
+              ? centeredPositions[pinnedMemberId].x + 70 
+              : (members[0] && centeredPositions[members[0].id] ? centeredPositions[members[0].id].x + 70 : undefined)
+          }
+          initialFocusY={
+            pinnedMemberId && centeredPositions[pinnedMemberId] 
+              ? centeredPositions[pinnedMemberId].y + 40 
+              : (members[0] && centeredPositions[members[0].id] ? centeredPositions[members[0].id].y + 40 : undefined)
+          }
         >
           <View style={{ flex: 1, width: contentWidth, height: contentHeight, paddingBottom: 96 }}>
             <Svg style={StyleSheet.absoluteFill} width={contentWidth} height={contentHeight}>
@@ -840,6 +910,36 @@ export default function TreeScreen() {
             })}
           </View>
         </ZoomPanContainer>
+
+        {showMiniMap && (
+          <MiniMap
+            members={members}
+            positions={centeredPositions}
+            edges={edges}
+            spouseEdges={spouseEdges}
+            viewport={viewport}
+            contentSize={{ width: contentWidth, height: contentHeight }}
+            onMapPress={handleMapPress}
+            tintColor={tint}
+          />
+        )}
+
+        <Pressable
+          onPress={() => setShowMiniMap(!showMiniMap)}
+          style={[styles.miniMapToggle, { backgroundColor: cardColor, borderColor: borderColor }]}
+        >
+          <Ionicons name={showMiniMap ? "map" : "map-outline"} size={20} color={tint} />
+        </Pressable>
+
+        {isEditing && (
+          <Pressable
+            onPress={() => setIsEditing(false)}
+            style={[styles.doneBtn, { backgroundColor: tint }]}
+          >
+            <Ionicons name="checkmark" size={20} color="#fff" />
+            <ThemedText style={styles.doneBtnText}>Done</ThemedText>
+          </Pressable>
+        )}
       </View>
 
       {relationModal.open && (
@@ -1146,6 +1246,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  miniMapToggle: {
+    position: 'absolute',
+    bottom: 100,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   jsonBox: {
     borderWidth: 1,

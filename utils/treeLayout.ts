@@ -47,7 +47,7 @@ export function calculateTreeLayout(members: Member[], screenWidth: number): Tre
   };
   members.forEach((m) => {
     (m.relations || []).forEach((r: any) => {
-      if (r.type === 'spouse' || r.type === 'partner') addSpouseEdge(m.id, r.targetId);
+      if (r.type === 'spouse' || r.type === 'partner' || r.type === 'sibling') addSpouseEdge(m.id, r.targetId);
     });
   });
 
@@ -154,7 +154,7 @@ export function calculateTreeLayout(members: Member[], screenWidth: number): Tre
   // Position nodes
   const positions: Record<string, { x: number; y: number }> = {};
   const levelHeight = 220;
-  const unitGap = 120; // Balanced gap between subtrees
+  const unitGap = 180; // Increased gap for complex spouse families
   const memberGap = 160;
   const minLeft = 40;
   const nodeWidth = 140;
@@ -248,31 +248,79 @@ export function calculateTreeLayout(members: Member[], screenWidth: number): Tre
     while (unitLayers.length <= d) unitLayers.push([]);
     unitLayers[d].push(u);
   });
-  unitLayers.forEach((layer, depth) => {
-    if (!layer || layer.length === 0) return;
-    layer.sort((a, b) => {
+
+  // Barycentric ordering to minimize edge crossings
+  // 1. Initial stable order for depth 0
+  if (unitLayers[0]) {
+    unitLayers[0].sort((a, b) => {
       const aa = getAnchorId(a);
       const bb = getAnchorId(b);
-      if (aa && bb && aa !== bb) return aa.localeCompare(bb);
-      return a.localeCompare(b);
+      return aa.localeCompare(bb);
     });
-    unitLayers[depth] = Array.from(new Set(layer));
-  });
+  }
+
+  // 2. Top-down pass: order each layer by average parent position
+  for (let d = 1; d < unitLayers.length; d++) {
+    const layer = unitLayers[d];
+    const prevLayer = unitLayers[d - 1];
+    const prevOrder = new Map<string, number>();
+    prevLayer.forEach((u, i) => prevOrder.set(u, i));
+
+    layer.sort((a, b) => {
+      const getAvgParentPos = (u: string) => {
+        const ps = Array.from(parentUnitsOf.get(u) || []);
+        if (ps.length === 0) return prevLayer.length; // Place unparented units at the end
+        const sum = ps.reduce((acc, p) => acc + (prevOrder.get(p) ?? 0), 0);
+        return sum / ps.length;
+      };
+      return getAvgParentPos(a) - getAvgParentPos(b);
+    });
+  }
+
+  // 3. Bottom-up pass: refine parent order by average child position
+  for (let d = unitLayers.length - 2; d >= 0; d--) {
+    const layer = unitLayers[d];
+    const nextLayer = unitLayers[d + 1];
+    const nextOrder = new Map<string, number>();
+    nextLayer.forEach((u, i) => nextOrder.set(u, i));
+
+    layer.sort((a, b) => {
+      const getAvgChildPos = (u: string) => {
+        const cs = Array.from(childUnitsOf.get(u) || []);
+        if (cs.length === 0) {
+            // If no children, try to stay near siblings who have children
+            return -1; 
+        }
+        const sum = cs.reduce((acc, c) => acc + (nextOrder.get(c) ?? 0), 0);
+        return sum / cs.length;
+      };
+      const posA = getAvgChildPos(a);
+      const posB = getAvgChildPos(b);
+      if (posA === -1 && posB === -1) return a.localeCompare(b);
+      if (posA === -1) return 1;
+      if (posB === -1) return -1;
+      return posA - posB;
+    });
+  }
 
   const unitCount = (u: string) => Math.max(1, compMembers.get(u)?.length ?? 1);
   const unitWidth = (u: string) => nodeWidth + (unitCount(u) - 1) * memberGap;
 
   // Recursive subtree width calculation to reserve enough space for all descendants
   const subtreeWidthCache = new Map<string, number>();
+  const visiting = new Set<string>();
   const getSubtreeWidth = (u: string): number => {
     if (subtreeWidthCache.has(u)) return subtreeWidthCache.get(u)!;
+    if (visiting.has(u)) return unitWidth(u); // Prevent infinite recursion
     
+    visiting.add(u);
     const ownWidth = unitWidth(u);
-    // Only consider children that are at a strictly greater depth to avoid infinite recursion in case of cycles
+    // Only consider children that are at a strictly greater depth
     const childrenUnits = Array.from(childUnitsOf.get(u) || [])
       .filter(cu => (unitDepth.get(cu) ?? 0) > (unitDepth.get(u) ?? 0));
     
     if (childrenUnits.length === 0) {
+      visiting.delete(u);
       subtreeWidthCache.set(u, ownWidth);
       return ownWidth;
     }
@@ -283,6 +331,7 @@ export function calculateTreeLayout(members: Member[], screenWidth: number): Tre
     }, 0);
 
     const finalWidth = Math.max(ownWidth, childrenTotalWidth);
+    visiting.delete(u);
     subtreeWidthCache.set(u, finalWidth);
     return finalWidth;
   };
@@ -506,5 +555,10 @@ export function calculateTreeLayout(members: Member[], screenWidth: number): Tre
       });
   });
 
-  return { layers, positions, edges: finalEdges, spouseEdges };
+  // Final layers should be based on unitLayers for consistency
+  const finalLayers: string[][] = unitLayers.map(ul => 
+    ul.flatMap(u => compMembers.get(u) || [])
+  );
+
+  return { layers: finalLayers, positions, edges: finalEdges, spouseEdges };
 }
