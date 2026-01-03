@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, 
     paddingVertical: 4, 
     borderRadius: 20, 
-    marginTop: -10,
+    marginTop: 4,
     ...Platform.select({
       web: { boxShadow: '0px 2px 2px rgba(0,0,0,0.2)' },
       default: {
@@ -350,8 +350,8 @@ const styles = StyleSheet.create({
   },
   treeBadge: {
     position: 'absolute',
-    bottom: -4,
-    right: -4,
+    top: -4,
+    left: -4,
     width: 18,
     height: 18,
     borderRadius: 9,

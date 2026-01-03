@@ -37,6 +37,7 @@ export default function TreeScreen() {
   const [rightTrayOpen, setRightTrayOpen] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [focusMemberId, setFocusMemberId] = useState<string | null>(null);
+  const [relationSearchQuery, setRelationSearchQuery] = useState('');
   const bgColor = useThemeColor({}, 'background');
   const cardColor = useThemeColor({}, 'card');
   const borderColor = useThemeColor({}, 'border');
@@ -753,6 +754,7 @@ export default function TreeScreen() {
     setTargetId(null);
     setShowDobPicker(false);
     setExpandedNodeId(null);
+    setRelationSearchQuery('');
   }, []);
 
   const reciprocal = (type: string) => {
@@ -1052,7 +1054,7 @@ export default function TreeScreen() {
       )}
 
       {focusMemberId && (
-        <View style={styles.focusHeader}>
+        <View style={styles.focusHeader} pointerEvents="box-none">
           <View style={[styles.focusPill, { backgroundColor: tint }]}>
             <Ionicons name="git-network-outline" size={16} color="#fff" />
             <ThemedText style={styles.focusPillText}>
@@ -1062,6 +1064,7 @@ export default function TreeScreen() {
               onPress={() => { setFocusMemberId(null); setTimeout(() => handleResetZoomPan(), 100); }}
               style={styles.focusCloseBtn}
             >
+              <ThemedText style={{ color: '#fff', fontWeight: '700', marginRight: 4 }}>Done</ThemedText>
               <Ionicons name="close-circle" size={20} color="#fff" />
             </Pressable>
           </View>
@@ -1070,6 +1073,7 @@ export default function TreeScreen() {
 
       <View 
         style={{ flex: 1 }} 
+        pointerEvents="box-none"
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
           if (width > 0 && height > 0) {
@@ -1296,26 +1300,58 @@ export default function TreeScreen() {
                   </View>
                 </View>
               ) : (
-                <ScrollView style={styles.memberList}>
-                  {visibleMembers
-                    .filter((m) => m.id !== relationModal.sourceId)
-                    .map((m) => (
-                      <Pressable
-                        key={m.id}
-                        onPress={() => setTargetId(m.id)}
-                        style={[
-                          styles.memberRow,
-                          { borderColor: borderColor },
-                          targetId === m.id && { backgroundColor: tint + '10', borderColor: tint },
-                        ]}
-                      >
-                        <ThemedText style={{ color: textColor, fontWeight: '600' }}>{m.name}</ThemedText>
-                        {targetId === m.id && (
-                          <ThemedText style={{ color: tint, fontWeight: '800' }}>✓</ThemedText>
-                        )}
+                <View style={{ flex: 1 }}>
+                  <View style={[styles.searchContainer, { marginBottom: 12, marginHorizontal: 0, backgroundColor: bgColor, borderColor: borderColor }]}>
+                    <Ionicons name="search" size={18} color="#94a3b8" />
+                    <TextInput
+                      placeholder="Search existing members..."
+                      placeholderTextColor="#94a3b8"
+                      value={relationSearchQuery}
+                      onChangeText={setRelationSearchQuery}
+                      style={[styles.searchInput, { color: textColor }]}
+                    />
+                    {relationSearchQuery.length > 0 && (
+                      <Pressable onPress={() => setRelationSearchQuery('')}>
+                        <Ionicons name="close-circle" size={18} color="#94a3b8" />
                       </Pressable>
-                    ))}
-                </ScrollView>
+                    )}
+                  </View>
+                  
+                  <ScrollView style={styles.memberList}>
+                    {(() => {
+                      const allMembers: Member[] = [];
+                      const flatten = (list: Member[]) => {
+                        list.forEach(m => {
+                          allMembers.push(m);
+                          if (m.subTree) flatten(m.subTree);
+                        });
+                      };
+                      flatten(members);
+                      
+                      const query = relationSearchQuery.toLowerCase().trim();
+                      
+                      return allMembers
+                        .filter((m) => m.id !== relationModal.sourceId)
+                        .filter((m) => !query || m.name.toLowerCase().includes(query))
+                        .map((m) => (
+                          <Pressable
+                            key={m.id}
+                            onPress={() => setTargetId(m.id)}
+                            style={[
+                              styles.memberRow,
+                              { borderColor: borderColor },
+                              targetId === m.id && { backgroundColor: tint + '10', borderColor: tint },
+                            ]}
+                          >
+                            <ThemedText style={{ color: textColor, fontWeight: '600' }}>{m.name}</ThemedText>
+                            {targetId === m.id && (
+                              <ThemedText style={{ color: tint, fontWeight: '800' }}>✓</ThemedText>
+                            )}
+                          </Pressable>
+                        ));
+                    })()}
+                  </ScrollView>
+                </View>
               )}
 
               <View style={styles.modalButtons}>
@@ -1752,7 +1788,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    zIndex: 100,
+    zIndex: 2000,
     elevation: 5,
     ...Platform.select({
       web: { boxShadow: '0 2px 4px rgba(0,0,0,0.2)' },
@@ -1966,5 +2002,7 @@ const styles = StyleSheet.create({
   focusCloseBtn: {
     marginLeft: 4,
     padding: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });
