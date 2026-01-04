@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "family-tree",
+    "name": "FamilyTree",
     "slug": "family-tree",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "family-tree",
+    "scheme": "familytree",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -26,7 +26,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.ico"
     },
     "plugins": [
       "expo-router",
@@ -46,6 +46,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f70cd76d-3cf3-4f32-9178-0b734759f777"
+      }
     }
   }
 }
