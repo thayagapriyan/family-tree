@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     maxWidth: 140,
   },
-  pillText: { color: '#fff', fontWeight: '800', fontSize: 13, textAlign: 'center', letterSpacing: -0.2 },
+  pillText: { color: '#fff', fontWeight: '800', fontSize: 13, textAlign: 'center', letterSpacing: -0.2, width: '100%' },
   pinBadge: {
     position: 'absolute',
     top: -8,
