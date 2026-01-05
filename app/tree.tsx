@@ -397,7 +397,7 @@ export default function TreeScreen() {
       if (canShare) {
         await Sharing.shareAsync(fileUri, {
           mimeType: 'application/zip',
-          dialogTitle: 'Export Family Tree (ZIP)',
+          dialogTitle: 'Export (ZIP)',
         });
       } else {
         openExportModal();
@@ -1697,7 +1697,7 @@ export default function TreeScreen() {
           <View style={styles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeExport} />
             <View style={[styles.modalCard, { backgroundColor: cardColor, borderColor: borderColor }]}>
-              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Export Family Tree</ThemedText>
+              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Export</ThemedText>
               
               {Platform.OS === 'web' && (
                 <Pressable 
@@ -1750,7 +1750,7 @@ export default function TreeScreen() {
           <View style={styles.overlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeImport} />
             <View style={[styles.modalCard, { backgroundColor: cardColor, borderColor: borderColor }]}>
-              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Import Family Subtree</ThemedText>
+              <ThemedText style={[styles.modalTitle, { color: textColor }]}>Import</ThemedText>
               
               <Pressable 
                 onPress={() => { closeImport(); void importFromFile(); }}
@@ -1802,9 +1802,8 @@ export default function TreeScreen() {
       >
         <ScrollView style={{ padding: 16 }}>
           <View style={{ gap: 24 }}>
-            {/* Navigation Category */}
             <View>
-              <ThemedText style={styles.categoryTitle}>Navigation</ThemedText>
+              <ThemedText style={styles.categoryTitle}>Tree Options</ThemedText>
               <View style={{ gap: 8 }}>
                 <Pressable
                   onPress={() => { setShowSearchResults(true); setLeftTrayOpen(false); }}
@@ -1814,7 +1813,7 @@ export default function TreeScreen() {
                     <View style={[styles.settingsIcon, { backgroundColor: tint + '15' }]}>
                       <Ionicons name="search-outline" size={20} color={tint} />
                     </View>
-                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Search Members</ThemedText>
+                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Search</ThemedText>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                 </Pressable>
@@ -1826,9 +1825,9 @@ export default function TreeScreen() {
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <View style={[styles.settingsIcon, { backgroundColor: tint + '15' }]}>
-                        <Ionicons name="pencil-outline" size={20} color={tint} />
+                        <Ionicons name="create-outline" size={20} color={tint} />
                       </View>
-                      <ThemedText style={{ color: textColor, fontWeight: '600' }}>Edit Tree</ThemedText>
+                      <ThemedText style={{ color: textColor, fontWeight: '600' }}>Edit</ThemedText>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                   </Pressable>
@@ -1848,13 +1847,7 @@ export default function TreeScreen() {
                     <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                   </Pressable>
                 )}
-              </View>
-            </View>
 
-            {/* Data Management Category */}
-            <View>
-              <ThemedText style={styles.categoryTitle}>Data Management</ThemedText>
-              <View style={{ gap: 8 }}>
                 <Pressable
                   onPress={() => { handleExportPress(); setLeftTrayOpen(false); }}
                   style={[styles.settingsItem, { backgroundColor: cardColor, borderColor: borderColor }]}
@@ -1863,7 +1856,7 @@ export default function TreeScreen() {
                     <View style={[styles.settingsIcon, { backgroundColor: '#3b82f615' }]}>
                       <Ionicons name="share-outline" size={20} color="#3b82f6" />
                     </View>
-                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Export Family Tree</ThemedText>
+                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Export</ThemedText>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                 </Pressable>
@@ -1876,29 +1869,26 @@ export default function TreeScreen() {
                     <View style={[styles.settingsIcon, { backgroundColor: '#10b98115' }]}>
                       <Ionicons name="download-outline" size={20} color="#10b981" />
                     </View>
-                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Import Family Tree</ThemedText>
+                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Import</ThemedText>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => { handleReset(); setLeftTrayOpen(false); }}
+                  style={[styles.settingsItem, { backgroundColor: cardColor, borderColor: borderColor }]}
+                >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={[styles.settingsIcon, { backgroundColor: '#ef444415' }]}>
+                        <Ionicons name="refresh-outline" size={20} color="#ef4444" />
+                      </View>
+                      <ThemedText style={{ color: '#ef4444', fontWeight: '600' }}>Reset</ThemedText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
                 </Pressable>
               </View>
             </View>
 
-            {/* Danger Zone Category */}
-            <View>
-              <ThemedText style={styles.categoryTitle}>Danger Zone</ThemedText>
-              <Pressable
-                onPress={() => { handleReset(); setLeftTrayOpen(false); }}
-                style={[styles.settingsItem, { backgroundColor: cardColor, borderColor: borderColor }]}
-              >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <View style={[styles.settingsIcon, { backgroundColor: '#ef444415' }]}>
-                      <Ionicons name="refresh-outline" size={20} color="#ef4444" />
-                    </View>
-                    <ThemedText style={{ color: '#ef4444', fontWeight: '600' }}>Reset All Subtrees</ThemedText>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-                </Pressable>
-            </View>
           </View>
 
           <View style={{ marginTop: 40, paddingBottom: 40, alignItems: 'center' }}>
