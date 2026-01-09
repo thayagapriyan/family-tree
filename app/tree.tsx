@@ -1,3 +1,4 @@
+import { FeatureTooltip } from '@/components/FeatureTooltip';
 import { SideTray } from '@/components/SideTray';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -107,6 +108,7 @@ export default function TreeScreen() {
   const [visibleNodeIds, setVisibleNodeIds] = useState<Set<string>>(new Set());
   const [containerDims, setContainerDims] = useState({ width: SCREEN_W, height: SCREEN_H - 240 });
   const [toast, setToast] = useState<string | null>(null);
+  const [showSubtreeTip, setShowSubtreeTip] = useState(false);
   const toastsRef = useRef<string[]>([]);
   const toastActiveRef = useRef(false);
   const backdropAnim = useRef(new Animated.Value(0)).current;
@@ -220,6 +222,16 @@ export default function TreeScreen() {
 
     const links = await FamilyService.getLinkedSubtrees();
     setLinkedSubtrees(links);
+
+    // Check if user has seen the subtree tip
+    const hasSeenTip = await FamilyService.hasSeenSubtreeTip();
+    if (!hasSeenTip && ensured.length > 0) {
+      // Check if there are any members with subtrees
+      const hasSubtrees = ensured.some(m => m.subTree && m.subTree.length > 0);
+      if (hasSubtrees) {
+        setTimeout(() => setShowSubtreeTip(true), 1500);
+      }
+    }
   }, [ensureDefaultMember, findMemberNested]);
 
   const filteredMembers = useMemo(() => {
@@ -1900,7 +1912,10 @@ export default function TreeScreen() {
                   <View style={[styles.settingsIcon, { backgroundColor: '#5856D615' }]}>
                     <Ionicons name="git-network-outline" size={20} color="#5856D6" />
                   </View>
-                  <ThemedText style={{ color: textColor, fontWeight: '600' }}>Family Subtree</ThemedText>
+                  <View>
+                    <ThemedText style={{ color: textColor, fontWeight: '600' }}>Focus on Subtree</ThemedText>
+                    <ThemedText style={{ color: '#94a3b8', fontSize: 11 }}>View only this person&apos;s branch</ThemedText>
+                  </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
               </Pressable>
@@ -1930,7 +1945,7 @@ export default function TreeScreen() {
               )}
 
               <View>
-                <ThemedText style={{ fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Family Subtree</ThemedText>
+                <ThemedText style={{ fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Family Members</ThemedText>
                 {selectedMember.relations && selectedMember.relations.length > 0 ? (
                   <View style={{ gap: 10 }}>
                     {selectedMember.relations.map((rel, idx) => {
@@ -1969,6 +1984,17 @@ export default function TreeScreen() {
           </View>
         )}
       </SideTray>
+
+      <FeatureTooltip
+        visible={showSubtreeTip}
+        title="Discover Family Subtrees"
+        message="Look for the branch icon on family members. Tap a member and select 'Focus on Subtree' to view just their family branch — perfect for navigating large trees!"
+        onDismiss={async () => {
+          setShowSubtreeTip(false);
+          await FamilyService.setSeenSubtreeTip();
+        }}
+        position="center"
+      />
 
     </ThemedView>
   );

@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const FAMILY_KEY = 'local:family';
 const PINNED_MEMBER_KEY = 'local:pinned_member';
 const LINKED_SUBTREES_KEY = 'local:linked_subtrees';
+const SUBTREE_TIP_SEEN_KEY = 'local:subtree_tip_seen';
 
 export const FamilyService = {
   async getFamily(): Promise<Member[]> {
@@ -52,5 +53,14 @@ export const FamilyService = {
     const links = await this.getLinkedSubtrees();
     delete links[memberId];
     await this.saveLinkedSubtrees(links);
+  },
+
+  async hasSeenSubtreeTip(): Promise<boolean> {
+    const seen = await AsyncStorage.getItem(SUBTREE_TIP_SEEN_KEY);
+    return seen === 'true';
+  },
+
+  async setSeenSubtreeTip(): Promise<void> {
+    await AsyncStorage.setItem(SUBTREE_TIP_SEEN_KEY, 'true');
   }
 };
